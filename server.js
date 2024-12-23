@@ -10,9 +10,16 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
+// Middleware
 app.use(express.json());
 app.use(express.static('public'));
 
+// Serve index.html for the root route
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Scraping route
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
     
@@ -58,6 +65,7 @@ app.post('/scrape', async (req, res) => {
     }
 });
 
+// Download route
 app.post('/download', async (req, res) => {
     try {
         const { imageUrl } = req.body;
