@@ -11,9 +11,8 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@sparticuz/chromium": "^109.0.6",
     "express": "^4.21.2",
     "node-fetch": "^3.3.2",
-    "puppeteer-core": "^19.11.1"
+    "puppeteer": "^23.11.1"
   }
 }
