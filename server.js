@@ -1,5 +1,6 @@
 import express from 'express';
-import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer-core';
+import chrome from '@sparticuz/chromium';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
@@ -8,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static('public'));
@@ -19,33 +20,44 @@ app.post('/scrape', async (req, res) => {
     if (!url || !url.startsWith('https://iconscout.com/')) {
         return res.status(400).json({ error: 'Invalid URL. Must be an IconScout URL.' });
     }
-
+    
     try {
-        const browser = await puppeteer.launch();
+        // Konfigurasi khusus untuk Vercel
+        const browser = await puppeteer.launch({
+            args: chrome.args,
+            defaultViewport: chrome.defaultViewport,
+            executablePath: await chrome.executablePath(),
+            headless: true,
+            ignoreHTTPSErrors: true
+        });
+        
         const page = await browser.newPage();
         
-        // Navigate to the URL
-        await page.goto(url, { waitUntil: 'networkidle0' });
-
-        // Wait for the results container to load
-        await page.waitForSelector('section.px-sm-7.p-5.results_vcd2w');
-
-        // Extract all image URLs
+        // Tambahkan timeout yang lebih pendek
+        await page.goto(url, { 
+            waitUntil: 'networkidle0',
+            timeout: 25000 
+        });
+        
+        // Gunakan timeout yang lebih pendek untuk selector
+        await page.waitForSelector('section.px-sm-7.p-5.results_vcd2w', {
+            timeout: 20000
+        });
+        
         const imageUrls = await page.evaluate(() => {
             const images = document.querySelectorAll('section.px-sm-7.p-5.results_vcd2w picture.thumb_PdMgf img');
             return Array.from(images).map(img => img.src);
         });
-
+        
         await browser.close();
-
+        
         res.json({ images: imageUrls });
     } catch (error) {
         console.error('Scraping error:', error);
-        res.status(500).json({ error: 'Failed to scrape images' });
+        res.status(500).json({ error: 'Failed to scrape images: ' + error.message });
     }
 });
 
-// Endpoint baru untuk mengunduh gambar
 app.post('/download', async (req, res) => {
     try {
         const { imageUrl } = req.body;
@@ -62,6 +74,4 @@ app.post('/download', async (req, res) => {
     }
 });
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-});
+export default app;
