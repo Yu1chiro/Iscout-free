@@ -1,6 +1,6 @@
 import express from 'express';
 import puppeteer from 'puppeteer-core';
-import chrome from '@sparticuz/chromium';
+import chromium from '@sparticuz/chromium';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
@@ -22,16 +22,21 @@ app.get('/', (req, res) => {
 // Scraping route
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
-    
+
     if (!url || !url.startsWith('https://iconscout.com/')) {
         console.error('Invalid URL received:', url);
         return res.status(400).json({ error: 'Invalid URL. Must be an IconScout URL.' });
     }
 
     try {
-        const browser = await puppeteer.launch({ headless: true }); // Headless harus benar-benar diaktifkan
-        const page = await browser.newPage();
+        // Menggunakan Chromium yang dikonfigurasi untuk Vercel
+        const browser = await puppeteer.launch({
+            headless: true,
+            executablePath: await chromium.executablePath(),
+            args: chromium.args,
+        });
         
+        const page = await browser.newPage();
         await page.goto(url, { waitUntil: 'networkidle0' });
 
         // Periksa apakah elemen yang diharapkan benar-benar ada
@@ -60,19 +65,18 @@ app.post('/scrape', async (req, res) => {
     }
 });
 
-
 // Download route
 app.post('/download', async (req, res) => {
     try {
         const { imageUrl } = req.body;
         const response = await fetch(imageUrl);
-        
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         const buffer = await response.buffer();
-        
+
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Content-Disposition', 'attachment');
         res.send(buffer);
