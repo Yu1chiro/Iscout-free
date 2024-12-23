@@ -19,25 +19,22 @@ app.post('/scrape', async (req, res) => {
     if (!url || !url.startsWith('https://iconscout.com/')) {
         return res.status(400).json({ error: 'Invalid URL. Must be an IconScout URL.' });
     }
-
+    
     try {
         const browser = await puppeteer.launch();
         const page = await browser.newPage();
         
-        // Navigate to the URL
         await page.goto(url, { waitUntil: 'networkidle0' });
-
-        // Wait for the results container to load
-        await page.waitForSelector('section.px-sm-7.p-5.results_vcd2w');
-
-        // Extract all image URLs
+        
+        await page.waitForSelector('div.container_pcuRO picture.thumb_PdMgf');
+        
         const imageUrls = await page.evaluate(() => {
-            const images = document.querySelectorAll('section.px-sm-7.p-5.results_vcd2w picture.thumb_PdMgf img');
+            const images = document.querySelectorAll('div.container_pcuRO picture.thumb_PdMgf img');
             return Array.from(images).map(img => img.src);
         });
-
+        
         await browser.close();
-
+        
         res.json({ images: imageUrls });
     } catch (error) {
         console.error('Scraping error:', error);
@@ -45,7 +42,6 @@ app.post('/scrape', async (req, res) => {
     }
 });
 
-// Endpoint baru untuk mengunduh gambar
 app.post('/download', async (req, res) => {
     try {
         const { imageUrl } = req.body;
