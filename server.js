@@ -14,75 +14,115 @@ const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-// Serve index.html for the root route
+// Serve index.html
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Scraping route
+// Konfigurasi Puppeteer yang dioptimalkan untuk Vercel
+const getPuppeteerOptions = async () => ({
+    args: [
+        ...chromium.args,
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--disable-web-security'
+    ],
+    defaultViewport: chromium.defaultViewport,
+    executablePath: await chromium.executablePath(),
+    headless: true,
+    ignoreHTTPSErrors: true
+});
+
+// Improved scraping route
 app.post('/scrape', async (req, res) => {
     const { url } = req.body;
-
+    
     if (!url || !url.startsWith('https://iconscout.com/')) {
-        console.error('Invalid URL received:', url);
         return res.status(400).json({ error: 'Invalid URL. Must be an IconScout URL.' });
     }
-
+    
+    let browser;
     try {
-        // Menggunakan Chromium yang dikonfigurasi untuk Vercel
-        const browser = await puppeteer.launch({
-            headless: true,
-            executablePath: await chromium.executablePath(),
-            args: chromium.args,
-        });
-        
+        browser = await puppeteer.launch(await getPuppeteerOptions());
         const page = await browser.newPage();
-        await page.goto(url, { waitUntil: 'networkidle0' });
+        
+        // Set longer timeout and additional headers
+        await page.setDefaultNavigationTimeout(60000);
+        await page.setExtraHTTPHeaders({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        });
 
-        // Periksa apakah elemen yang diharapkan benar-benar ada
-        const resultsSelector = 'section.px-sm-7.p-5.results_vcd2w';
-        const isResultsLoaded = await page.$(resultsSelector);
+        await page.goto(url, { 
+            waitUntil: 'networkidle0',
+            timeout: 60000 
+        });
 
-        if (!isResultsLoaded) {
-            console.error('Results container not found on the page:', url);
-            await browser.close();
-            return res.status(404).json({ error: 'Results container not found on the page' });
-        }
+        // Wait for content to load
+        await page.waitForSelector('section.px-sm-7.p-5.results_vcd2w', {
+            timeout: 30000
+        });
 
-        // Extract image URLs
+        // Extract image URLs with error handling
         const imageUrls = await page.evaluate(() => {
             const images = document.querySelectorAll('section.px-sm-7.p-5.results_vcd2w picture.thumb_PdMgf img');
+            if (!images.length) {
+                throw new Error('No images found on the page');
+            }
             return Array.from(images).map(img => img.src);
         });
 
-        console.log('Scraped image URLs:', imageUrls);
-        await browser.close();
+        if (!imageUrls.length) {
+            throw new Error('No images were extracted');
+        }
 
         res.json({ images: imageUrls });
     } catch (error) {
-        console.error('Scraping error:', error.message);
-        res.status(500).json({ error: 'Failed to scrape images' });
+        console.error('Scraping error:', error);
+        res.status(500).json({ 
+            error: 'Failed to scrape images',
+            details: error.message 
+        });
+    } finally {
+        if (browser) {
+            await browser.close();
+        }
     }
 });
 
-// Download route
+// Improved download route
 app.post('/download', async (req, res) => {
+    const { imageUrl } = req.body;
+    
+    if (!imageUrl) {
+        return res.status(400).json({ error: 'Image URL is required' });
+    }
+
     try {
-        const { imageUrl } = req.body;
-        const response = await fetch(imageUrl);
+        const response = await fetch(imageUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const buffer = await response.buffer();
-
-        res.setHeader('Content-Type', 'image/jpeg');
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        
+        res.setHeader('Content-Type', contentType);
         res.setHeader('Content-Disposition', 'attachment');
         res.send(buffer);
     } catch (error) {
         console.error('Download error:', error);
-        res.status(500).json({ error: 'Download failed' });
+        res.status(500).json({ 
+            error: 'Download failed',
+            details: error.message 
+        });
     }
 });
 
