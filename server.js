@@ -24,46 +24,42 @@ app.post('/scrape', async (req, res) => {
     const { url } = req.body;
     
     if (!url || !url.startsWith('https://iconscout.com/')) {
-        return res.status(400).json({ error: 'Invalid URL' });
+        console.error('Invalid URL received:', url);
+        return res.status(400).json({ error: 'Invalid URL. Must be an IconScout URL.' });
     }
-    
-    try {
-        const browser = await puppeteer.launch({
-            args: [
-                ...chrome.args,
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage'
-            ],
-            executablePath: await chrome.executablePath(),
-            headless: chrome.headless,
-            ignoreHTTPSErrors: true
-        });
 
+    try {
+        const browser = await puppeteer.launch({ headless: true }); // Headless harus benar-benar diaktifkan
         const page = await browser.newPage();
         
-        // Set strict timeout
-        await page.setDefaultNavigationTimeout(15000);
-        await page.setDefaultTimeout(15000);
-        
         await page.goto(url, { waitUntil: 'networkidle0' });
-        
+
+        // Periksa apakah elemen yang diharapkan benar-benar ada
+        const resultsSelector = 'section.px-sm-7.p-5.results_vcd2w';
+        const isResultsLoaded = await page.$(resultsSelector);
+
+        if (!isResultsLoaded) {
+            console.error('Results container not found on the page:', url);
+            await browser.close();
+            return res.status(404).json({ error: 'Results container not found on the page' });
+        }
+
+        // Extract image URLs
         const imageUrls = await page.evaluate(() => {
             const images = document.querySelectorAll('section.px-sm-7.p-5.results_vcd2w picture.thumb_PdMgf img');
             return Array.from(images).map(img => img.src);
         });
-        
+
+        console.log('Scraped image URLs:', imageUrls);
         await browser.close();
-        
-        return res.status(200).json({ images: imageUrls });
+
+        res.json({ images: imageUrls });
     } catch (error) {
-        console.error('Scraping error:', error);
-        return res.status(500).json({ 
-            error: 'Scraping failed',
-            details: error.message 
-        });
+        console.error('Scraping error:', error.message);
+        res.status(500).json({ error: 'Failed to scrape images' });
     }
 });
+
 
 // Download route
 app.post('/download', async (req, res) => {
