@@ -1,5 +1,5 @@
 import express from 'express';
-import puppeteer from 'puppeteer';
+import * as cheerio from 'cheerio';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fetch from 'node-fetch';
@@ -21,19 +21,21 @@ app.post('/scrape', async (req, res) => {
     }
     
     try {
-        const browser = await puppeteer.launch();
-        const page = await browser.newPage();
+        // Fetch the HTML content from the URL
+        const response = await fetch(url);
+        const html = await response.text();
         
-        await page.goto(url, { waitUntil: 'networkidle0' });
+        // Load the HTML with Cheerio
+        const $ = cheerio.load(html);
         
-        await page.waitForSelector('div.container_pcuRO picture.thumb_PdMgf');
-        
-        const imageUrls = await page.evaluate(() => {
-            const images = document.querySelectorAll('div.container_pcuRO picture.thumb_PdMgf img');
-            return Array.from(images).map(img => img.src);
+        // Extract image URLs using Cheerio selectors
+        const imageUrls = [];
+        $('div.container_pcuRO picture.thumb_PdMgf img').each((i, element) => {
+            const src = $(element).attr('src');
+            if (src) {
+                imageUrls.push(src);
+            }
         });
-        
-        await browser.close();
         
         res.json({ images: imageUrls });
     } catch (error) {
@@ -56,6 +58,11 @@ app.post('/download', async (req, res) => {
         console.error('Download error:', error);
         res.status(500).json({ error: 'Failed to download image' });
     }
+});
+
+// Add a simple HTML page for testing
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(port, () => {
